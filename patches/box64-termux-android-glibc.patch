@@ -1,0 +1,430 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 4098f33..2532fea 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -61,10 +61,10 @@ endif()
+ 
+ # Hack: limit the optimization level to -O1 for some platforms
+ if(TERMUX OR ANDROID)
+-    set(CMAKE_C_FLAGS_RELEASE "-O1")
+-    set(CMAKE_CXX_FLAGS_RELEASE "-O1")
+-    set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O1 -g")
+-    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O1 -g")
++    set(CMAKE_C_FLAGS_RELEASE "-O2")
++    set(CMAKE_CXX_FLAGS_RELEASE "-O2")
++    set(CMAKE_C_FLAGS_RELWITHDEBINFO "-O2 -g")
++    set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g")
+ endif()
+ 
+ if(LARCH64)
+diff --git a/src/emu/entrypoint.c b/src/emu/entrypoint.c
+index d0670fa..205d5fe 100644
+--- a/src/emu/entrypoint.c
++++ b/src/emu/entrypoint.c
+@@ -30,7 +30,10 @@ void EXPORT my___libc_init(x64emu_t* emu, void* raw_args , void (*onexit)(void)
+     SetRBP(emu, Pop64(emu));    // restore RBP
+     emu->quit = 1; // finished!
+ }
+-#else
++#endif
++
++// Also build the glibc entry point on Android: bionic has no __libc_start_main,
++// so box64 must provide it itself to start Linux/glibc x86_64 binaries.
+ EXPORT int32_t my___libc_start_main(x64emu_t* emu, int (*main) (int, char * *, char * *), int argc, char * * ubp_av, void (*init) (void), void (*fini) (void), void (*rtld_fini) (void), void (* stack_end))
+ {
+     (void)argc; (void)ubp_av; (void)fini; (void)rtld_fini; (void)stack_end;
+@@ -145,4 +148,3 @@ int32_t EXPORT my32___libc_start_main(x64emu_t* emu, int *(main) (int, char * *,
+ }
+ #endif
+ #endif
+-#endif
+diff --git a/src/wrapped/generated/functions_list.txt b/src/wrapped/generated/functions_list.txt
+index 29ddbcf..817ab38 100644
+--- a/src/wrapped/generated/functions_list.txt
++++ b/src/wrapped/generated/functions_list.txt
+@@ -4258,6 +4258,8 @@
+ #() iFEpuvvppp -> iFEpuppp
+ wrappedalure:
+ wrappedalut:
++wrappedandroidshmem:
++wrappedandroidsupport:
+ wrappedanl:
+ wrappedatk:
+ - vFp:
+@@ -5468,6 +5470,7 @@ wrappedgtkx112:
+ - pFpipppppppi:
+   - gtk_toolbar_insert_element
+ wrappedharfbuzzsubset:
++wrappediconv:
+ wrappedicui18n64:
+ wrappedicui18n66:
+ wrappedicui18n67:
+@@ -5619,6 +5622,7 @@ wrappedlibc:
+   - __deregister_frame_info
+   - fts64_read
+   - fts_read
++  - gettext
+   - mallinfo
+   - mallinfo2
+ - vFpi:
+@@ -5710,6 +5714,9 @@ wrappedlibc:
+ - pFpp:
+   - __libc_dlsym
+   - __realpath_chk
++  - bind_textdomain_codeset
++  - bindtextdomain
++  - dgettext
+   - realpath
+ - SFpp:
+   - fopen
+@@ -5830,6 +5837,8 @@ wrappedlibc:
+ - LFppL:
+   - strlcat
+   - strlcpy
++- pFipp:
++  - __newlocale
+ - pFpip:
+   - fts64_open
+   - fts_open
+@@ -7577,6 +7586,7 @@ wrappedtcmallocminimal:
+ - pFpLiiil:
+   - mmap
+   - mmap64
++wrappedtermuxexec:
+ wrappedudev0:
+ wrappedudev1:
+ - vFpp:
+diff --git a/src/wrapped/generated/wrappedlibctypes.h b/src/wrapped/generated/wrappedlibctypes.h
+index fe264d9..4dbd430 100644
+--- a/src/wrapped/generated/wrappedlibctypes.h
++++ b/src/wrapped/generated/wrappedlibctypes.h
+@@ -74,6 +74,7 @@ typedef intptr_t (*lFipL_t)(int32_t, void*, uintptr_t);
+ typedef intptr_t (*lFipV_t)(int32_t, void*, ...);
+ typedef intptr_t (*lFppL_t)(void*, void*, uintptr_t);
+ typedef uintptr_t (*LFppL_t)(void*, void*, uintptr_t);
++typedef void* (*pFipp_t)(int32_t, void*, void*);
+ typedef void* (*pFpip_t)(void*, int32_t, void*);
+ typedef void* (*pFppp_t)(void*, void*, void*);
+ typedef void* (*pFppV_t)(void*, void*, ...);
+@@ -174,6 +175,7 @@ typedef int32_t (*iFppipppp_t)(void*, void*, int32_t, void*, void*, void*, void*
+ 	GO(__deregister_frame_info, pFp_t) \
+ 	GO(fts64_read, pFp_t) \
+ 	GO(fts_read, pFp_t) \
++	GO(gettext, pFp_t) \
+ 	GO(mallinfo, pFp_t) \
+ 	GO(mallinfo2, pFp_t) \
+ 	GO(__longjmp_chk, vFpi_t) \
+@@ -247,6 +249,9 @@ typedef int32_t (*iFppipppp_t)(void*, void*, int32_t, void*, void*, void*, void*
+ 	GO(fts_children, pFpi_t) \
+ 	GO(__libc_dlsym, pFpp_t) \
+ 	GO(__realpath_chk, pFpp_t) \
++	GO(bind_textdomain_codeset, pFpp_t) \
++	GO(bindtextdomain, pFpp_t) \
++	GO(dgettext, pFpp_t) \
+ 	GO(realpath, pFpp_t) \
+ 	GO(fopen, SFpp_t) \
+ 	GO(fopen64, SFpp_t) \
+@@ -337,6 +342,7 @@ typedef int32_t (*iFppipppp_t)(void*, void*, int32_t, void*, void*, void*, void*
+ 	GO(readlink, lFppL_t) \
+ 	GO(strlcat, LFppL_t) \
+ 	GO(strlcpy, LFppL_t) \
++	GO(__newlocale, pFipp_t) \
+ 	GO(fts64_open, pFpip_t) \
+ 	GO(fts_open, pFpip_t) \
+ 	GO(tdelete, pFppp_t) \
+diff --git a/src/wrapped/wrappedlibc.c b/src/wrapped/wrappedlibc.c
+index 10c0f34..368d9d5 100644
+--- a/src/wrapped/wrappedlibc.c
++++ b/src/wrapped/wrappedlibc.c
+@@ -25,6 +25,7 @@ extern const char *const sys_siglist[] __asm__("__sys_siglist");
+ #include <stdlib.h>
+ #include <stdio.h>
+ #include <stddef.h>
++#include <locale.h>
+ #include <string.h>
+ #include <wchar.h>
+ #include <dlfcn.h>
+@@ -5493,4 +5494,19 @@ EXPORT char* secure_getenv(const char* name)
+     freeMy();       \
+     return;     // do not unload...
+ 
++#ifdef ANDROID
++// bionic has no gettext implementation; the engine only needs untranslated strings.
++EXPORT void* my___newlocale(int mask, const char* name, void* base)
++{
++    // glibc's libstdc++ passes (1 << LC_ALL) == 0x40, which glibc tolerates but bionic rejects.
++    if (mask & (1 << LC_ALL))
++        mask = (mask & LC_ALL_MASK) | LC_ALL_MASK;
++    return (void*)newlocale(mask, name, (locale_t)base);
++}
++EXPORT char* my_gettext(const char* msgid) { return (char*)msgid; }
++EXPORT char* my_dgettext(const char* domain, const char* msgid) { (void)domain; return (char*)msgid; }
++EXPORT char* my_bindtextdomain(const char* domain, const char* dirname) { (void)domain; return (char*)dirname; }
++EXPORT char* my_bind_textdomain_codeset(const char* domain, const char* codeset) { (void)domain; return (char*)codeset; }
++#endif
++
+ #include "wrappedlib_init.h"
+diff --git a/src/wrapped/wrappedlibc_private.h b/src/wrapped/wrappedlibc_private.h
+index 84a7e7e..38ff340 100644
+--- a/src/wrapped/wrappedlibc_private.h
++++ b/src/wrapped/wrappedlibc_private.h
+@@ -76,13 +76,25 @@ GOWM(backtrace_symbols, pFEpi)
+ //GO(__backtrace_symbols_fd, 
+ GOWM(backtrace_symbols_fd, vFEpii)
+ GOW(basename, pFp)
++#ifdef ANDROID
++GO2(bcmp, iFppL, memcmp)
++#else
+ GO(bcmp, iFppL)
++#endif
+ GO(bcopy, vFppL)
+ //GO(bdflush, 
+ GOW(bind, iFipu)
+ GO(bindresvport, iFip)
++#ifdef ANDROID
++GOM(bindtextdomain, pFpp)
++#else
+ GOW(bindtextdomain, pFpp)
++#endif
++#ifdef ANDROID
++GOM(bind_textdomain_codeset, pFpp)
++#else
+ GOW(bind_textdomain_codeset, pFpp)
++#endif
+ GOW(brk, iFp)
+ //GO(__bsd_getpgrp, 
+ GO2(bsd_signal, pFEip, my_signal)
+@@ -248,7 +260,11 @@ GOM(delete_module, iFEpu)
+ GO(des_setparity, vFp)
+ #endif
+ GO(__dgettext, pFpp)
++#ifdef ANDROID
++GOM(dgettext, pFpp)
++#else
+ GOW(dgettext, pFpp)
++#endif
+ GO(difftime, dFll)
+ GO(dirfd, iFp)
+ GO(dirname, pFp)
+@@ -279,7 +295,11 @@ GOW(dup, iFi)
+ GO(__dup2, iFii)
+ GOW(dup2, iFii)
+ GOW(dup3, iFiiO)
++#ifdef ANDROID
++GO2(__duplocale, pFp, duplocale)
++#else
+ GO(__duplocale, pFp)
++#endif
+ GOW(duplocale, pFp)
+ GO(dysize, iFi)
+ GOW(eaccess, iFpi)
+@@ -337,7 +357,11 @@ GO(erand48, dFp)
+ GOW(erand48_r, iFppp)
+ GOM(err, vFEipV)
+ //DATAB(errno, 
++#ifdef ANDROID
++GO2(__errno_location, pFv, __errno)
++#else
+ GO(__errno_location, pFv)
++#endif
+ GOWM(error, vFEiipV)
+ GOWM(error_at_line, vFEiipupV)
+ //DATAB(error_message_count, 4)
+@@ -493,7 +517,11 @@ GO(free_sized, vFpL)
+ #endif
+ GO(freeaddrinfo, vFp)
+ GOW(freeifaddrs, vFp)
++#ifdef ANDROID
++GO2(__freelocale, vFp, freelocale)
++#else
+ GO(__freelocale, vFp)
++#endif
+ GOW(freelocale, vFp)
+ GO(fremovexattr, iFip)
+ GO(freopen, SFppS)
+@@ -749,7 +777,11 @@ GO(getspent_r, iFppLp)
+ GO(getspnam, pFp)
+ GO(getspnam_r, iFpppLp)
+ GO(getsubopt, iFppp)
++#ifdef ANDROID
++GOM(gettext, pFp)
++#else
+ GOW(gettext, pFp)
++#endif
+ GOW(gettid, iFv)
+ GO(__gettimeofday, iFpp)
+ GO(gettimeofday, iFpp)
+@@ -1110,7 +1142,11 @@ GOW(iswcntrl, iFu)
+ GOW(iswcntrl_l, iFup)
+ //GO(__iswctype, 
+ GOW(iswctype, iFuL)
++#ifdef ANDROID
++GO2(__iswctype_l, iFuLL, iswctype_l)
++#else
+ GO(__iswctype_l, iFuLL)
++#endif
+ GOW(iswctype_l, iFuLp)
+ GOW(iswdigit, iFu)
+ //GO(__iswdigit_l, 
+@@ -1431,7 +1467,11 @@ GOW(nanosleep, iFpp)
+ GO(netname2host, iFppi)
+ GO(netname2user, iFppppp)
+ #endif
++#ifdef ANDROID
++GOM(__newlocale, pFipp)
++#else
+ GO(__newlocale, pFipp)
++#endif
+ GOW(newlocale, pFipp)
+ //GO(nfsservctl, 
+ GOM(nftw, iFEppii)
+@@ -1440,7 +1480,11 @@ GOW(ngettext, pFppL)
+ GO(nice, iFi)
+ //DATAB(_nl_domain_bindings, 
+ GO(nl_langinfo, pFi)
++#ifdef ANDROID
++GO2(__nl_langinfo_l, pFip, nl_langinfo_l)
++#else
+ GO(__nl_langinfo_l, pFip)
++#endif
+ GOW(nl_langinfo_l, pFip)
+ DATAB(_nl_msg_cat_cntr, 4)
+ GO(nrand48, lFp)
+@@ -2015,7 +2059,11 @@ GO(strchr, pFpi)
+ GO(strchrnul, pFpi)
+ GO(strcmp, iFpp)
+ GO(strcoll, iFpp)
++#ifdef ANDROID
++GO2(__strcoll_l, iFppp, strcoll_l)
++#else
+ GO(__strcoll_l, iFppp)
++#endif
+ GOW(strcoll_l, iFppp)
+ GO(strcpy, pFpp)
+ GO(__strcpy_chk, pFppL)
+@@ -2050,7 +2098,11 @@ GOD(strfromf64x, iFpLpD, strfromf32x)
+ GOD(strfroml, iFpLpD, strfromd)
+ GO(strfry, pFp)
+ GO(strftime, LFpLpp)
++#ifdef ANDROID
++GO2(__strftime_l, LFpLppL, strftime_l)
++#else
+ GO(__strftime_l, LFpLppL)
++#endif
+ GOW(strftime_l, LFpLppp)
+ GO(strlen, LFp)
+ GO(__strlcpy_chk, LFppLL)
+@@ -2084,7 +2136,11 @@ GO(strspn, LFpp)
+ GO(strstr, pFpp)
+ GO(strtod, dFpp)
+ GO(__strtod_internal, dFppi)
++#ifdef ANDROID
++GO2(__strtod_l, dFppp, strtod_l)
++#else
+ GO(__strtod_l, dFppp)
++#endif
+ GOW(strtod_l, dFppp)
+ //GO(__strtod_nan, 
+ GO(strtof, fFpp)
+@@ -2101,7 +2157,11 @@ GOW(strtof64_l, dFppp)
+ GOWD(strtof64x, DFpp, strtof32x)
+ GOWD(strtof64x_l, DFppp, strtof32x_l)
+ GO(__strtof_internal, fFppi)
++#ifdef ANDROID
++GO2(__strtof_l, fFppp, strtof_l)
++#else
+ GO(__strtof_l, fFppp)
++#endif
+ GOW(strtof_l, fFppp)
+ //GO(__strtof_nan, 
+ GO(strtoimax, IFppi)
+@@ -2144,7 +2204,11 @@ GOW(strtouq, UFppi)
+ //GO(__strverscmp, 
+ GOW(strverscmp, iFpp)
+ GO(strxfrm, LFppL)
++#ifdef ANDROID
++GO2(__strxfrm_l, LFppLL, strxfrm_l)
++#else
+ GO(__strxfrm_l, LFppLL)
++#endif
+ GO(strxfrm_l, LFppLp)
+ //GO(stty, 
+ #ifdef STATICBUILD
+@@ -2323,10 +2387,18 @@ GOW(towctrans, uFup)
+ //GO(__towctrans_l, 
+ GOW(towctrans_l, uFupp)
+ GOW(towlower, uFu)
++#ifdef ANDROID
++GO2(__towlower_l, iFip, towlower_l)
++#else
+ GO(__towlower_l, iFip)
++#endif
+ GOW(towlower_l, uFup)
+ GOW(towupper, uFu)
++#ifdef ANDROID
++GO2(__towupper_l, iFip, towupper_l)
++#else
+ GO(__towupper_l, iFip)
++#endif
+ GOW(towupper_l, uFup)
+ //GO(tr_break, 
+ GO(truncate, iFpl)
+@@ -2366,7 +2438,11 @@ GO(unshare, iFi)
+ GOW(updwtmp, vFpp)
+ GO(updwtmpx, vFpp)
+ //GO(uselib, 
++#ifdef ANDROID
++GO2(__uselocale, pFp, uselocale)
++#else
+ GO(__uselocale, pFp)
++#endif
+ GOW(uselocale, pFp)
+ #ifdef STATICBUILD
+ //GO(user2netname, 
+@@ -2446,14 +2522,22 @@ GO(wcschr, pFpi)
+ GO(wcschrnul, pFpi)
+ GO(wcscmp, iFpp)
+ GOW(wcscoll, iFpp)
++#ifdef ANDROID
++GO2(__wcscoll_l, iFppp, wcscoll_l)
++#else
+ GO(__wcscoll_l, iFppp)
++#endif
+ GOW(wcscoll_l, iFppp)
+ GO(wcscpy, pFpp)
+ GO(__wcscpy_chk, pFppL)
+ GO(wcscspn, LFpp)
+ GO(wcsdup, pFp)
+ GO(wcsftime, LFpLpp)
++#ifdef ANDROID
++GO2(__wcsftime_l, LFpLppp, wcsftime_l)
++#else
+ GO(__wcsftime_l, LFpLppp)
++#endif
+ GO(wcsftime_l, LFpLppp)
+ GO(wcslen, LFp)
+ GO(wcsncasecmp, iFppL)
+@@ -2532,7 +2616,11 @@ GOW(wcstouq, UFppi)
+ GOW(wcswcs, pFpp)
+ GO(wcswidth, iFpL)
+ GO(wcsxfrm, LFppL)
++#ifdef ANDROID
++GO2(__wcsxfrm_l, LFppLL, wcsxfrm_l)
++#else
+ GO(__wcsxfrm_l, LFppLL)
++#endif
+ GO(wcsxfrm_l, LFppLp)
+ GO(wctob, iFu)
+ GO(wctomb, iFpi)
+@@ -2542,7 +2630,11 @@ GOW(wctrans, pFp)
+ GOW(wctrans_l, pFpp)
+ GOW(wctype, LFp)
+ GOW(wctype_l, LFpp)
++#ifdef ANDROID
++GO2(__wctype_l, LFpp, wctype_l)
++#else
+ GO(__wctype_l, LFpp)
++#endif
+ GO(wcwidth, iFi)
+ GO(wmemchr, pFpiL)
+ GO(wmemcmp, iFppL)

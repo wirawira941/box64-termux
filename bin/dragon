@@ -1,0 +1,21 @@
+#!/data/data/com.termux/files/usr/bin/bash
+# Dragon 3 (x86_64 Linux) on Termux/ARM64 via native box64 -- no proot.
+set -e
+
+PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+ENGINE="${DRAGON_BIN:-$HOME/downloads/dragon-3-linux}"
+
+if [ ! -x "$ENGINE" ]; then
+    echo "dragon: engine not found or not executable: $ENGINE" >&2
+    echo "Set DRAGON_BIN to the path of your Dragon 3 Linux binary." >&2
+    exit 1
+fi
+
+# The engine calls system("lscpu"), so a usable PATH matters.
+export PATH="$PREFIX/bin:/system/bin:/system/xbin:$PATH"
+
+# DynaCache costs ~6 s extra at startup for this workload.
+export BOX64_DYNACACHE=0
+export BOX64_NOBANNER=1
+
+exec "$PREFIX/bin/box64" "$ENGINE" "$@"
