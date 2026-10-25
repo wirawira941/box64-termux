@@ -11,7 +11,7 @@ set -eu
 TAG="v0.4.5-termux.1"
 VER="0.4.5"
 ASSET="box64_${VER}_termux_arm64.tar.gz"
-SHA256="TO_BE_FILLED_AFTER_CI"
+SHA256="0dae8257ac7396db4766721e5e4f317679b2080752d32e90d4e6e6fdfee467cf"
 URL="https://github.com/wirawira941/box64-termux/releases/download/${TAG}/${ASSET}"
 
 if [ -z "${PREFIX:-}" ]; then
