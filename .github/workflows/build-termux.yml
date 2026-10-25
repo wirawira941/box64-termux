@@ -1,0 +1,107 @@
+name: Build Termux (Android arm64, NDK cross)
+
+on:
+  workflow_dispatch:
+    inputs:
+      base_commit:
+        description: "box64 upstream commit to build"
+        required: true
+        default: "420eda69ff51ab5d5a7cbc3dee2e70433be3411d"
+      release_tag:
+        description: "Release tag to create"
+        required: true
+        default: "v0.4.5-termux.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout port repo (patches, wrapper)
+        uses: actions/checkout@v4
+
+      - name: Fetch box64 at pinned commit + apply patch
+        run: |
+          set -eux
+          mkdir box64-src && cd box64-src
+          git init -q
+          git remote add origin https://github.com/ptitSeb/box64.git
+          git fetch -q --depth 1 origin "${{ inputs.base_commit }}"
+          git checkout -q FETCH_HEAD
+          git log --oneline -1
+          git apply ../patches/box64-termux-android-glibc.patch
+          git diff --stat
+
+      - name: Setup NDK r28c
+        run: |
+          set -eux
+          curl -fL -o ndk.zip "https://dl.google.com/android/repository/android-ndk-r28c-linux.zip"
+          unzip -q ndk.zip -d "$HOME"
+          echo "NDK_HOME=$HOME/android-ndk-r28c" >> "$GITHUB_ENV"
+
+      - name: Build libandroid-sysv-semaphore (Termux shim, not in NDK)
+        run: |
+          set -eux
+          mkdir -p local-libs && cd local-libs
+          # Same single-file source as the official Termux package
+          # (bionic's sys_sem.c, BSD 2-Clause, (C) The Android Open Source Project).
+          for f in sys_sem.c sys_sem.h LICENSE; do
+            curl -fL -o "$f" "https://raw.githubusercontent.com/termux/termux-packages/master/packages/libandroid-sysv-semaphore/$f"
+          done
+          CLANG="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android28-clang"
+          "$CLANG" -D__USE_GNU -fPIC -O2 -c sys_sem.c -o sys_sem.o
+          "$CLANG" -shared -o libandroid-sysv-semaphore.so sys_sem.o
+          file libandroid-sysv-semaphore.so
+
+      - name: Build box64 (Android arm64, Termux, Dynarec)
+        working-directory: box64-src
+        run: |
+          set -eux
+          # ANDROID_PLATFORM >= 28 is required: bionic only exposes
+          # glob/globfree (used by src/steam.c) from API 28.
+          cmake -S . -B build-android \
+            -DCMAKE_TOOLCHAIN_FILE="$NDK_HOME/build/cmake/android.toolchain.cmake" \
+            -DANDROID_ABI=arm64-v8a \
+            -DANDROID_PLATFORM=android-28 \
+            -DTERMUX=1 -DARM64=1 -DARM_DYNAREC=ON \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_EXE_LINKER_FLAGS="-L$GITHUB_WORKSPACE/local-libs -Wl,-rpath,/data/data/com.termux/files/usr/lib"
+          make -C build-android -j"$(nproc)"
+          ls -la build-android/box64
+
+      - name: Strip + ELF gate (must be bionic PIE) + patch evidence
+        working-directory: box64-src
+        run: |
+          set -eux
+          STRIP="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-strip"
+          "$STRIP" build-android/box64
+          B=build-android/box64
+          readelf -h "$B" | tee /tmp/elf.txt
+          grep -q "Type:.*DYN" /tmp/elf.txt
+          grep -q "Machine:.*AArch64" /tmp/elf.txt
+          readelf -l "$B" | grep -q "/system/bin/linker64"
+          readelf -d "$B" | grep -q "libandroid-sysv-semaphore.so"
+          readelf --dyn-syms "$B" | grep -q "my___libc_start_main"
+          readelf --dyn-syms "$B" | grep -q "my___newlocale"
+          strings "$B" | grep -q "Box64 arm64 v0.4.5"
+          echo "ELF gate OK"
+          ls -la "$B"
+
+      - name: Package + release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eux
+          mkdir -p dist
+          cp box64-src/build-android/box64 dist/box64
+          cp bin/dragon dist/dragon
+          cp box64-src/LICENSE dist/LICENSE-box64
+          cp local-libs/LICENSE dist/LICENSE-sysv-semaphore
+          tar -czf "box64_0.4.5_termux_arm64.tar.gz" -C dist box64 dragon LICENSE-box64 LICENSE-sysv-semaphore
+          sha256sum "box64_0.4.5_termux_arm64.tar.gz" > "box64_0.4.5_termux_arm64.tar.gz.sha256"
+          ls -la *.tar.gz*
+          gh release create "${{ inputs.release_tag }}" --repo "${{ github.repository }}" \
+            --title "box64 0.4.5 for Termux (Android arm64) - ${{ inputs.release_tag }}" \
+            --notes "Native Android arm64 build of box64 (base commit 420eda6, v0.4.5) with the Android/glibc patch set from oncloudy/dragon3-termux: my___libc_start_main built on Android, GO2 aliases for bionic locale symbols, my___newlocale mask normalization, gettext stubs, -O2 for Termux. Runs glibc x86_64 binaries such as Komodo Dragon 3 on Termux without proot. Requires the Termux package libandroid-sysv-semaphore at runtime (the installer handles it). Installer + wrapper + notes in termux/ and docs/." \
+            "box64_0.4.5_termux_arm64.tar.gz" "box64_0.4.5_termux_arm64.tar.gz.sha256"
